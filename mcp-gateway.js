@@ -17,6 +17,50 @@ app.use((req, res, next) => {
   }
 });
 
+// Binance API Integration
+class BinanceDataProvider {
+  static baseURL = 'https://api.binance.com/api/v3';
+  
+  static async getCurrentPrice(symbol) {
+    try {
+      const binanceSymbol = `${symbol.toUpperCase()}USDT`;
+      const response = await axios.get(`${this.baseURL}/ticker/price?symbol=${binanceSymbol}`, { timeout: 5000 });
+      return parseFloat(response.data.price);
+    } catch (error) {
+      throw new Error(`Binance price fetch failed: ${error.message}`);
+    }
+  }
+  
+  static async get24hrStats(symbol) {
+    try {
+      const binanceSymbol = `${symbol.toUpperCase()}USDT`;
+      const response = await axios.get(`${this.baseURL}/ticker/24hr?symbol=${binanceSymbol}`, { timeout: 5000 });
+      return {
+        price: parseFloat(response.data.lastPrice),
+        change24h: parseFloat(response.data.priceChangePercent),
+        volume: parseFloat(response.data.volume),
+        high: parseFloat(response.data.highPrice),
+        low: parseFloat(response.data.lowPrice),
+        count: parseInt(response.data.count)
+      };
+    } catch (error) {
+      throw new Error(`Binance 24hr stats failed: ${error.message}`);
+    }
+  }
+  
+  static mapCoinGeckoToBinance(coinGeckoSymbol) {
+    const mapping = {
+      'bitcoin': 'BTC',
+      'ethereum': 'ETH', 
+      'cardano': 'ADA',
+      'solana': 'SOL',
+      'binancecoin': 'BNB'
+    };
+    return mapping[coinGeckoSymbol] || coinGeckoSymbol.toUpperCase();
+  }
+}
+
+
 // Simplified Technical Analysis Engine
 class CryptoGodEngine {
   
