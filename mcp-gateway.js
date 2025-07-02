@@ -718,6 +718,173 @@ async function handleMCPRequest(request) {
   }
 }
 
+
+// MCP Server-Sent Events Implementation
+app.get('/mcp/sse', (req, res) => {
+  console.log('🔗 SSE Client connected');
+  
+  // Set SSE headers
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Cache-Control',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
+  });
+
+  // Send initial connection event
+  res.write('event: connected\n');
+  res.write('data: {"status": "connected", "protocol": "MCP-SSE", "version": "3.1.0"}\n\n');
+
+  // Send MCP initialize response
+  res.write('event: initialize\n');
+  res.write('data: ' + JSON.stringify({
+    protocolVersion: "2024-11-05",
+    capabilities: {
+      tools: { listChanged: true },
+      resources: {},
+      prompts: {}
+    },
+    serverInfo: {
+      name: "crypto-god-analysis-server",
+      version: "3.1.0"
+    }
+  }) + '\n\n');
+
+  // Send available tools
+  res.write('event: tools\n');
+  res.write('data: ' + JSON.stringify({
+    tools: [
+      {
+        name: "god_analysis",
+        description: "Complete GOD-level cryptocurrency analysis with Binance API integration",
+        inputSchema: {
+          type: "object",
+          properties: {
+            symbol: { type: "string", description: "Cryptocurrency symbol (e.g., bitcoin, ethereum)" }
+          },
+          required: ["symbol"]
+        }
+      },
+      {
+        name: "fear_greed_index",
+        description: "Current market fear & greed index",
+        inputSchema: {
+          type: "object",
+          properties: {},
+          required: []
+        }
+      },
+      {
+        name: "quick_price",
+        description: "Quick price check using Binance API",
+        inputSchema: {
+          type: "object",
+          properties: {
+            symbol: { type: "string", description: "Cryptocurrency symbol" }
+          },
+          required: ["symbol"]
+        }
+      }
+    ]
+  }) + '\n\n');
+
+  // Keep connection alive
+  const keepAlive = setInterval(() => {
+    res.write('event: ping\n');
+    res.write('data: {"timestamp": "' + new Date().toISOString() + '"}\n\n');
+  }, 30000);
+
+  // Handle client disconnect
+  req.on('close', () => {
+    console.log('🔌 SSE Client disconnected');
+    clearInterval(keepAlive);
+  });
+
+  req.on('error', (err) => {
+    console.error('🚨 SSE Error:', err);
+    clearInterval(keepAlive);
+  });
+});
+
+// MCP SSE Tool Execution Endpoint
+app.post('/mcp/sse/execute', async (req, res) => {
+  try {
+    const { tool, arguments: toolArgs } = req.body;
+    
+    console.log('🔧 Executing SSE tool:', tool);
+    
+    let result;
+    
+    if (tool === 'god_analysis') {
+      const marketData = await CryptoGodEngine.getMarketData(toolArgs.symbol);
+      const technicals = CryptoGodEngine.calculateSimpleTechnicals(marketData.historical.prices);
+      const sentiment = await CryptoGodEngine.getNewsSentiment(toolArgs.symbol);
+      const marketStructure = CryptoGodEngine.marketStructureAnalysis(marketData);
+      const fearGreed = await CryptoGodEngine.getFearGreedIndex();
+      const prediction = CryptoGodEngine.generateGodPrediction(technicals, marketData, sentiment, marketStructure);
+
+      result = {
+        symbol: toolArgs.symbol.toUpperCase(),
+        timestamp: moment().format(),
+        current_price: marketData.coin.market_data.current_price.usd,
+        market_analysis: {
+          technical_indicators: technicals || {},
+          market_structure: marketStructure,
+          sentiment_analysis: sentiment,
+          fear_greed_index: fearGreed,
+          god_prediction: prediction
+        },
+        trading_signals: {
+          entry_points: prediction.price_targets,
+          risk_management: {
+            stop_loss: prediction.price_targets.support,
+            take_profit: prediction.price_targets.resistance,
+            position_size: prediction.risk_level === 'HIGH' ? '1-2%' : '3-5%'
+          }
+        }
+      };
+    } else if (tool === 'fear_greed_index') {
+      result = await CryptoGodEngine.getFearGreedIndex();
+    } else if (tool === 'quick_price') {
+      try {
+        const binanceSymbol = BinanceDataProvider.mapCoinGeckoToBinance(toolArgs.symbol);
+        const price = await BinanceDataProvider.getCurrentPrice(binanceSymbol);
+        result = {
+          symbol: toolArgs.symbol.toUpperCase(),
+          price: price,
+          source: "Binance API",
+          timestamp: moment().format()
+        };
+      } catch (error) {
+        const priceData = await axios.get(`https://api.coingecko.com/api/v3/simple/price?ids=${toolArgs.symbol}&vs_currencies=usd`);
+        result = {
+          symbol: toolArgs.symbol.toUpperCase(),
+          price: priceData.data[toolArgs.symbol].usd,
+          source: "CoinGecko API (fallback)",
+          timestamp: moment().format()
+        };
+      }
+    }
+
+    res.json({
+      success: true,
+      tool: tool,
+      result: result,
+      timestamp: moment().format()
+    });
+
+  } catch (error) {
+    console.error('❌ SSE Tool Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: moment().format()
+    });
+  }
+});
+
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`🚀 MCP Global Intelligence Gateway running on port ${PORT}`);
