@@ -1,6 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const moment = require('moment');
+const WebSocket = require("ws");
 
 const app = express();
 app.use(express.json());
@@ -604,6 +605,118 @@ app.use((error, req, res, next) => {
     timestamp: moment().format()
   });
 });
+
+
+// MCP WebSocket Server
+const wss = new WebSocket.Server({ 
+  port: process.env.WS_PORT || 4001
+});
+
+console.log('🔗 MCP WebSocket Server starting on port 4001');
+
+wss.on('connection', (ws) => {
+  console.log('✅ MCP Client connected');
+  
+  ws.on('message', async (message) => {
+    try {
+      const request = JSON.parse(message);
+      console.log('�� Received MCP request:', request.method);
+      
+      let response = await handleMCPRequest(request);
+      ws.send(JSON.stringify(response));
+      
+    } catch (error) {
+      console.error('❌ MCP Error:', error);
+      ws.send(JSON.stringify({
+        jsonrpc: "2.0",
+        id: request?.id || null,
+        error: { code: -32603, message: error.message }
+      }));
+    }
+  });
+
+  ws.on('close', () => {
+    console.log('🔌 MCP Client disconnected');
+  });
+});
+
+// MCP Request Handler
+async function handleMCPRequest(request) {
+  const { jsonrpc, id, method, params } = request;
+
+  switch (method) {
+    case 'initialize':
+      return {
+        jsonrpc,
+        id,
+        result: {
+          protocolVersion: "2024-11-05",
+          capabilities: { tools: { listChanged: true } },
+          serverInfo: { name: "crypto-god-analysis-server", version: "3.1.0" }
+        }
+      };
+
+    case 'tools/list':
+      return {
+        jsonrpc,
+        id,
+        result: {
+          tools: [
+            {
+              name: "god_analysis",
+              description: "Complete GOD-level cryptocurrency analysis with Binance API",
+              inputSchema: {
+                type: "object",
+                properties: {
+                  symbol: { type: "string", description: "Cryptocurrency symbol" }
+                },
+                required: ["symbol"]
+              }
+            }
+          ]
+        }
+      };
+
+    case 'tools/call':
+      const toolName = params.name;
+      const toolParams = params.arguments || {};
+
+      if (toolName === 'god_analysis') {
+        const marketData = await CryptoGodEngine.getMarketData(toolParams.symbol);
+        const technicals = CryptoGodEngine.calculateSimpleTechnicals(marketData.historical.prices);
+        const sentiment = await CryptoGodEngine.getNewsSentiment(toolParams.symbol);
+        const marketStructure = CryptoGodEngine.marketStructureAnalysis(marketData);
+        const fearGreed = await CryptoGodEngine.getFearGreedIndex();
+        const prediction = CryptoGodEngine.generateGodPrediction(technicals, marketData, sentiment, marketStructure);
+
+        return {
+          jsonrpc,
+          id,
+          result: {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                symbol: toolParams.symbol.toUpperCase(),
+                timestamp: moment().format(),
+                current_price: marketData.coin.market_data.current_price.usd,
+                market_analysis: {
+                  technical_indicators: technicals || {},
+                  market_structure: marketStructure,
+                  sentiment_analysis: sentiment,
+                  fear_greed_index: fearGreed,
+                  god_prediction: prediction
+                }
+              }, null, 2)
+            }]
+          }
+        };
+      }
+      break;
+
+    default:
+      throw new Error(`Unknown method: ${method}`);
+  }
+}
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
